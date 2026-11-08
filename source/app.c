@@ -601,6 +601,13 @@ void app_gfx_cycle_profile(int dir) {
     app_set_status(ok ? ST_OK : ST_ERROR, "%s", msg);
 }
 
+void app_gfx_diagnostic(void) {
+    char msg[200];
+    bool ok = gfx_write_diagnostic(APP_DIR "/diagnostic_report.txt", msg, sizeof msg);
+    log_line("graphics diagnostic: %s", msg);
+    app_set_status(ok ? ST_OK : ST_ERROR, "%s", msg);
+}
+
 bool app_restart_needed(void) { return g_restart_needed; }
 
 void app_restart(void) {

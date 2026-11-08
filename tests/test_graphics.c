@@ -51,6 +51,23 @@ int main(void) {
     gfx_query(&st);
     CHECK(st.tuning == GFX_FAST && st.chosen == GFX_FAST, "fast: tuning %d chosen %d", st.tuning, st.chosen);
 
+
+    CHECK(gfx_write_diagnostic("diagnostic_report.txt", msg, sizeof msg), "diagnostic report: %s", msg);
+    FILE *report = fopen("diagnostic_report.txt", "rb");
+    CHECK(report != NULL, "diagnostic report exists");
+    if (report) {
+        char report_text[8192];
+        size_t report_len = fread(report_text, 1, sizeof report_text - 1, report);
+        report_text[report_len] = '\0';
+        fclose(report);
+        CHECK(strstr(report_text, "IPS32 header: PASS") != NULL, "diagnostic IPS header");
+        CHECK(strstr(report_text, "Parsed record count: 15 (expected 15)") != NULL, "diagnostic IPS record count");
+        CHECK(strstr(report_text, "Installed profile: Fast") != NULL, "diagnostic installed profile");
+        CHECK(strstr(report_text, "Exact built-in profile match: Fast") != NULL, "diagnostic file match");
+        CHECK(strstr(report_text, "Runtime IPS application: UNKNOWN") != NULL, "diagnostic runtime limitation");
+    }
+
+
     // a file edited by hand is not one of ours
     put(GFX_TUNING_DIR "/shadow_configuration.switch.json", "{}");
     gfx_query(&st);

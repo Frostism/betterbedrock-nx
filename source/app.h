@@ -70,6 +70,7 @@ void app_routing_toggle(void);
 const gfx_state *app_gfx(void);
 void app_gfx_toggle(void);             // Vibrant Visuals on/off (patch + profile files)
 void app_gfx_cycle_profile(int dir);   // Fast / Balanced / Quality
+void app_gfx_diagnostic(void);          // write diagnostic_report.txt
 
 bool app_restart_needed(void);
 void app_restart(void);  // returns only when the restart failed (status says so)

@@ -55,6 +55,9 @@ const gfx_profile_def *gfx_profile_get(gfx_profile p);
 
 void gfx_query(gfx_state *st);
 
+// Write a read-only diagnostic snapshot of the embedded patch and installed files.
+int gfx_write_diagnostic(const char *path, char *msg, size_t msg_cap);
+
 // Turn Vibrant Visuals on (patch + profile `p` files) or off (removes both).
 int gfx_set_vv(int on, gfx_profile p, char *msg, size_t msg_cap);
 

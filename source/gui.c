@@ -24,7 +24,7 @@ static const gfx_color RED = {248, 113, 113, 255}, YELLOW = {250, 204, 21, 255},
 
 typedef enum {
     I_MS, I_NAME, I_ADDRESS, I_PORT, I_TEST, I_FEATURED, I_VIA, I_BC, I_ROUTING,  // Online
-    I_VV, I_PROFILE,                                                             // Graphics
+    I_VV, I_PROFILE, I_DIAGNOSTIC,                                               // Graphics
     I_RESTART, I_COUNT
 } item;
 typedef enum { PAGE_MAIN, PAGE_GRAPHICS, PAGE_DETAILS } page;
@@ -278,15 +278,16 @@ static void draw_vv(int x, int y, int w, int h) {
     gfx_round(x + 20, by, w - 40, bh, 14, on ? GREEN_DARK : CARD_EDGE);
     gfx_round(x + 22, by + 2, w - 44, bh - 4, 12, on ? GREEN_BG : CARD);
     gfx_text(FONT_S, x + 40, by + 12, MUTED, "In Minecraft");
+    button(I_DIAGNOSTIC, x + w - 184, by + 42, 144, 36, "Create report", false, true);
     if (g->tuning == -2 && on) {
-        gfx_text_fit(FONT_M, x + 40, by + 40, w - 80, 0, YELLOW, "The profile files were edited -");
-        gfx_text_fit(FONT_M, x + 40, by + 70, w - 80, 0, YELLOW, "pick a profile to write them again");
+        gfx_text_fit(FONT_M, x + 40, by + 40, w - 220, 0, YELLOW, "The profile files were edited -");
+        gfx_text_fit(FONT_M, x + 40, by + 70, w - 220, 0, YELLOW, "pick a profile to write them again");
     } else if (on) {
-        gfx_text_fit(FONT_M, x + 40, by + 40, w - 80, 0, TEXT, "Settings > Video > Mode > Vibrant Visuals");
-        gfx_text_fit(FONT_S, x + 40, by + 76, w - 80, 0, GREEN, "After a change: close Minecraft fully, then start it.");
+        gfx_text_fit(FONT_M, x + 40, by + 40, w - 220, 0, TEXT, "Settings > Video > Mode > Vibrant Visuals");
+        gfx_text_fit(FONT_S, x + 40, by + 76, w - 220, 0, GREEN, "After a change: close Minecraft fully, then start it.");
     } else {
-        gfx_text_fit(FONT_M, x + 40, by + 40, w - 80, 0, TEXT, "Turn Vibrant Visuals on, then start");
-        gfx_text_fit(FONT_M, x + 40, by + 70, w - 80, 0, TEXT, "Minecraft and choose it under Video");
+        gfx_text_fit(FONT_M, x + 40, by + 40, w - 220, 0, TEXT, "Turn Vibrant Visuals on, then start");
+        gfx_text_fit(FONT_M, x + 40, by + 70, w - 220, 0, TEXT, "Minecraft and choose it under Video");
     }
 }
 
@@ -447,7 +448,7 @@ static void draw(void) {
 
 static bool visible(item i) {
     if (i == I_RESTART) return app_restart_needed();
-    if ((i == I_VV || i == I_PROFILE) != (g_page == PAGE_GRAPHICS)) return false;
+    if ((i == I_VV || i == I_PROFILE || i == I_DIAGNOSTIC) != (g_page == PAGE_GRAPHICS)) return false;
     if (i == I_BC) return app_cfg()->via == ROUTE_VIA_BEDROCKCONNECT;
     return true;
 }
@@ -547,6 +548,9 @@ static void activate(item i, int dir) {
             break;
         case I_PROFILE:
             app_gfx_cycle_profile(dir ? dir : 1);
+            break;
+        case I_DIAGNOSTIC:
+            app_gfx_diagnostic();
             break;
         case I_RESTART:
             app_restart();

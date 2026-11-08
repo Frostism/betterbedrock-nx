@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 // The unlock for Minecraft 1.26.44 (main NSO build id GFX_BUILD_ID), IPS32: offsets
@@ -304,6 +305,153 @@ void gfx_query(gfx_state *st) {
     st->tuning = installed_profile();
     st->chosen = read_chosen();
 }
+
+
+static void report_ips(FILE *f) {
+    fprintf(f, "[Embedded IPS32 patch]\n");
+    fprintf(f, "Expected game: Minecraft %s\n", GFX_GAME_VERSION);
+    fprintf(f, "Expected build ID: %s\n", GFX_BUILD_ID);
+    fprintf(f, "Patch path: %s\n", GFX_PATCH_PATH);
+    fprintf(f, "Embedded patch size: %lu bytes\n", (unsigned long)sizeof k_patch);
+    fprintf(f, "IPS32 header: %s\n", sizeof k_patch >= 5 && memcmp(k_patch, "IPS32", 5) == 0 ? "PASS" : "FAIL");
+
+    struct stat st;
+    if (stat(GFX_PATCH_PATH, &st) == 0) {
+        int same = same_as(GFX_PATCH_PATH, k_patch, sizeof k_patch);
+        fprintf(f, "Installed patch file: PRESENT, %lu bytes\n", (unsigned long)st.st_size);
+        fprintf(f, "Installed patch matches embedded bytes: %s\n",
+                same == 1 ? "YES" : same == 0 ? "NO" : "UNREADABLE");
+    } else {
+        fprintf(f, "Installed patch file: MISSING/UNREADABLE (errno %d: %s)\n", errno, strerror(errno));
+    }
+
+    size_t pos = 5;
+    int records = 0, malformed = 0, eof = 0;
+    fprintf(f, "IPS32 records (NSO image offset; raw IPS offset; replacement bytes):\n");
+    while (pos < sizeof k_patch) {
+        if (pos + 4 <= sizeof k_patch && memcmp(k_patch + pos, "EEOF", 4) == 0) {
+            pos += 4;
+            eof = 1;
+            break;
+        }
+        if (pos + 6 > sizeof k_patch) {
+            malformed = 1;
+            break;
+        }
+        unsigned long raw = ((unsigned long)k_patch[pos] << 24) |
+                            ((unsigned long)k_patch[pos + 1] << 16) |
+                            ((unsigned long)k_patch[pos + 2] << 8) |
+                            (unsigned long)k_patch[pos + 3];
+        unsigned int len = ((unsigned int)k_patch[pos + 4] << 8) | k_patch[pos + 5];
+        pos += 6;
+        if (len == 0) {
+            if (pos + 3 > sizeof k_patch) {
+                malformed = 1;
+                break;
+            }
+            unsigned int run = ((unsigned int)k_patch[pos] << 8) | k_patch[pos + 1];
+            fprintf(f, "  0x%08lx; 0x%08lx; RLE %u x %02X\n",
+                    raw >= 0x100 ? raw - 0x100 : raw, raw, run, k_patch[pos + 2]);
+            pos += 3;
+        } else {
+            if (pos + len > sizeof k_patch) {
+                malformed = 1;
+                break;
+            }
+            fprintf(f, "  0x%08lx; 0x%08lx;", raw >= 0x100 ? raw - 0x100 : raw, raw);
+            for (unsigned int i = 0; i < len; i++)
+                fprintf(f, " %02X", k_patch[pos + i]);
+            fputc('\n', f);
+            pos += len;
+        }
+        records++;
+    }
+    fprintf(f, "Parsed record count: %d (expected 15)\n", records);
+    fprintf(f, "IPS32 EOF marker: %s\n", eof ? "PASS" : "FAIL");
+    fprintf(f, "IPS32 structure: %s\n\n", !malformed && eof && records == 15 ? "PASS" : "FAIL");
+}
+
+int gfx_write_diagnostic(const char *path, char *msg, size_t msg_cap) {
+    if (!path || !msg || msg_cap == 0) return 0;
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        snprintf(msg, msg_cap, "Could not create report: %s", strerror(errno));
+        return 0;
+    }
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    char timestamp[32] = "unknown";
+    if (localtime_r(&now, &tm_now))
+        strftime(timestamp, sizeof timestamp, "%Y-%m-%d %H:%M:%S", &tm_now);
+
+    fprintf(f, "BetterBedrock NX diagnostic report\n");
+    fprintf(f, "Generated: %s\n\n", timestamp);
+    fprintf(f, "[Environment and target]\n");
+    fprintf(f, "Minecraft version target: %s\n", GFX_GAME_VERSION);
+    fprintf(f, "Title ID: 0100D71004694000\n");
+    fprintf(f, "Expected build ID: %s\n", GFX_BUILD_ID);
+    fprintf(f, "Atmosphere version: UNKNOWN (not queried by this app)\n");
+    fprintf(f, "Runtime IPS application: UNKNOWN (SD-card files cannot prove runtime application)\n\n");
+
+    report_ips(f);
+
+    fprintf(f, "[Graphics configuration]\n");
+    struct stat st;
+    if (stat(GFX_CONFIG_PATH, &st) == 0)
+        fprintf(f, "Saved profile file: PRESENT, %lu bytes (%s)\n", (unsigned long)st.st_size, GFX_CONFIG_PATH);
+    else
+        fprintf(f, "Saved profile file: MISSING/UNREADABLE (errno %d: %s)\n", errno, strerror(errno));
+    fprintf(f, "Selected profile: %s (defaults to Balanced if the setting is absent/unreadable)\n",
+            gfx_profile_get(read_chosen())->name);
+
+    int installed = installed_profile();
+    if (installed >= 0)
+        fprintf(f, "Installed profile: %s\n", gfx_profile_get((gfx_profile)installed)->name);
+    else if (installed == -1)
+        fprintf(f, "Installed profile: NONE (no profile files found)\n");
+    else
+        fprintf(f, "Installed profile: MIXED/UNKNOWN (files do not all match one built-in profile)\n");
+
+    fprintf(f, "LayeredFS directory: %s\n", GFX_TUNING_DIR);
+    for (int i = 0; i < FILE_COUNT; i++) {
+        char path_buf[256];
+        char expected[4096];
+        file_path(i, path_buf, sizeof path_buf);
+        fprintf(f, "\nFile: %s\n", path_buf);
+        if (stat(path_buf, &st) != 0) {
+            fprintf(f, "  Status: MISSING/UNREADABLE (errno %d: %s)\n", errno, strerror(errno));
+            continue;
+        }
+        fprintf(f, "  Status: PRESENT, %lu bytes\n", (unsigned long)st.st_size);
+        int match = -1;
+        for (int p = 0; p < GFX_PROFILE_COUNT; p++) {
+            int n = gfx_render_file((gfx_profile)p, i, expected, sizeof expected);
+            if (n > 0 && same_as(path_buf, expected, (size_t)n) == 1) {
+                match = p;
+                break;
+            }
+        }
+        fprintf(f, "  Exact built-in profile match: %s\n",
+                match >= 0 ? gfx_profile_get((gfx_profile)match)->name : "NO");
+    }
+
+    fprintf(f, "\n[Interpretation and limitations]\n");
+    fprintf(f, "This report checks the app's embedded patch and files currently on the SD card.\n");
+    fprintf(f, "It does not verify Atmosphere patch discovery, build-ID matching at launch, or\n");
+    fprintf(f, "the replacement instructions in Minecraft process memory.\n");
+    fprintf(f, "Original executable bytes are not inspected by this report.\n");
+
+    int ok = ferror(f) == 0;
+    if (fclose(f) != 0) ok = 0;
+    if (!ok) {
+        snprintf(msg, msg_cap, "Report write failed: %s", strerror(errno));
+        return 0;
+    }
+    snprintf(msg, msg_cap, "Diagnostic report saved: %s", path);
+    return 1;
+}
+
 
 // ---- actions ----
 
